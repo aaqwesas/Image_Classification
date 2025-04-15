@@ -1,0 +1,17 @@
+[CV 5/10] END colsample_bytree=0.8, eta=0.05, gamma=0.005, max_depth=8, n_estimators=300, subsample=0.9;, score=0.560 total time= 2.2min
+
+[CV 1/10] END eta=0.2, gamma=0.002, max_depth=12, n_estimators=300, subsample=1;, score=0.580 total time= 2.7min
+
+[CV 1/10] END eta=0.2, max_depth=12, n_estimators=300, subsample=1;, score=0.610 total time=14.1min
+
+[CV 1/10] END colsample_bytree=0.8, eta=0.05, gamma=0.005, max_depth=8, n_estimators=500, subsample=0.9;, score=0.586 total time= 3.9min
+
+[CV 1/10] END colsample_bytree=0.8, eta=0.05, gamma=0.005, max_depth=12, n_estimators=500, subsample=0.9;, score=0.608 total time=33.3min
+
+[CV 1/10] END colsample_bytree=0.8, eta=0.05, gamma=0.005, max_depth=12, n_estimators=300, subsample=0.9;, score=0.598 total time=30.9min (without PCA)
+
+[CV 1/10] END eta=0.2, max_depth=12, n_estimators=300, subsample=1;, score=0.592 total time=14.9min (LBP + HOG grayscale with 12 origintation)
+
+[CV 8/10] END eta=0.2, max_depth=12, n_estimators=300, subsample=1;, score=0.624 total time=21.0min (LBP with HOG)
+
+[CV 1/10] END eta=0.2, max_depth=12, n_estimators=300, subsample=1;, score=0.604 total time= 3.8min (LBP, HOG and approx PCA)
