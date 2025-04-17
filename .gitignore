@@ -70,3 +70,4 @@ models/*
 
 # sklearn
 *.joblib
+tried.txt

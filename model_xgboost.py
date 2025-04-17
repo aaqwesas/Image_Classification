@@ -1,7 +1,7 @@
 import numpy as np
 import logging
 from joblib import dump, load
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.decomposition import PCA, KernelPCA
 from sklearn.kernel_approximation import Nystroem
 from sklearn.manifold import TSNE, SpectralEmbedding
@@ -76,7 +76,7 @@ class ModelXGBoost:
             # Compute HOG features
             features = hog(
                 image,
-                orientations=12,
+                orientations=9,
                 pixels_per_cell=(8, 8),
                 cells_per_block=(2, 2),
                 block_norm="L2-Hys",
@@ -215,7 +215,7 @@ class ModelXGBoost:
             features_test = features_test.reshape(self.tx.shape[0], -1)
 
         # Standardize the features
-        self.scaler = StandardScaler()
+        self.scaler = RobustScaler()
         features_train = self.scaler.fit_transform(features_train)
         features_test = self.scaler.transform(features_test)
 
@@ -234,7 +234,7 @@ class ModelXGBoost:
 
         # Linear PCA
         if kwargs.get("Linear_PCA", False):
-            features_train = self.apply_pca(features_train, n_components=120)
+            features_train = self.apply_pca(features_train, n_components=150)
             features_test = self.pca.transform(features_test)
 
         # Kernel PCA
@@ -255,7 +255,7 @@ class ModelXGBoost:
             self.logger.info("applying kernal PCA (approximation)")
             features_train, kpca = self.apply_approx_kernel_pca(
                 features_train,
-                n_components=120,
+                n_components=200,
                 kernel="rbf",
                 gamma=1e-3,
                 n_samples=10000,
@@ -306,8 +306,8 @@ class ModelXGBoost:
         )
 
         param_grid = {
-            "n_estimators": [300],
-            "max_depth": [12],
+            "n_estimators": [200],
+            "max_depth": [9],
             "eta": [0.2],
             "subsample": [1],
         }
