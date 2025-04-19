@@ -14,39 +14,6 @@ class ImageProcessing:
         """
         self.path = path
 
-    def apply_laplacian(self, img):
-        """
-        Apply the Laplacian operator to detect edges in the image.
-        """
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        laplacian = cv2.Laplacian(blurred, cv2.CV_64F)
-        normalized = cv2.normalize(laplacian, None, 0, 255, cv2.NORM_MINMAX)
-        return np.uint8(normalized)
-
-    def apply_sobel(self, img):
-        """
-        Apply the Sobel operator to detect edges in the image.
-        """
-        gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
-        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
-        magnitude = np.sqrt(sobelx**2 + sobely**2)
-        threshold = 50
-        edges = magnitude > threshold
-        return np.array(edges)
-
-    def apply_clahe(self, img):
-        """
-        Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) to enhance the image.
-        """
-        hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
-        h, s, v = cv2.split(hsv)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        v = clahe.apply(v)
-        enhanced = cv2.merge((h, s, v))
-        return cv2.cvtColor(enhanced, cv2.COLOR_HSV2RGB)
-
     def normalize_image(self, img):
         """
         Normalize the image pixel values to the range [0, 1].
@@ -88,10 +55,16 @@ class ImageProcessing:
         return np.array(images)
 
     def augment_image(self, image):
-        if np.random.rand() > 0.8:
+        """
+        Apply random augmentation to a single image.
+        Augmentation example: random horizontal flip and random rotation.
+        """
+        # Random horizontal flip with probability 0.5
+        if np.random.rand() > 0.5:
             image = np.fliplr(image)
 
-        if np.random.rand() > 0.8:
+        # Random vertical flip with probability 0.5
+        if np.random.rand() > 0.5:
             image = np.flipud(image)
 
         # Random rotation between -15 and 15 degrees
@@ -99,6 +72,7 @@ class ImageProcessing:
         (h, w) = image.shape[:2]
         M = cv2.getRotationMatrix2D((w / 2, h / 2), angle, 1.0)
         image = cv2.warpAffine(image, M, (w, h), borderMode=cv2.BORDER_REFLECT)
+
         return image
 
     def oversample_data(self, images, labels, target_count):
@@ -138,7 +112,6 @@ class ImageProcessing:
             all_images = np.concatenate([all_images, extra_images], axis=0)
             all_labels = np.concatenate([all_labels, extra_labels], axis=0)
         elif total_count > target_count:
-            # If we overshot the target, randomly select target_count samples.
             idxs = np.random.choice(total_count, target_count, replace=False)
             all_images = all_images[idxs]
             all_labels = all_labels[idxs]
@@ -190,7 +163,7 @@ class ImageProcessing:
         train_labels = np.array(train_labels)
         test_labels = np.array(test_labels)
 
-        target_train_count = 250000
+        target_train_count = 200000
         print(
             f"Oversampling training data from {train_images.shape[0]} to {target_train_count} samples..."
         )
@@ -208,7 +181,7 @@ class ImageProcessing:
 
 
 if __name__ == "__main__":
-    processing = ImageProcessing(path="data")
+    processing = ImageProcessing(path="../data")
     x, y, tx, ty, test_image_paths = processing.main()
 
     # Create and train your model.
@@ -216,7 +189,7 @@ if __name__ == "__main__":
     paras = {
         "hog": True,
         "lbp": True,
-        "Linear_PCA": True,
+        "Linear_PCA": False,
         "Kernal_PCA": False,
         "Approx_Kernal_PCA": False,
         "TSNE": False,

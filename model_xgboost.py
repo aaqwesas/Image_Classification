@@ -1,20 +1,19 @@
 import numpy as np
 import logging
 from joblib import dump, load
-from sklearn.preprocessing import StandardScaler, RobustScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA, KernelPCA
 from sklearn.kernel_approximation import Nystroem
 from sklearn.manifold import TSNE, SpectralEmbedding
-from skimage.transform import resize
-import pandas as pd
-from skimage.feature import hog, local_binary_pattern
-from sklearn.linear_model import LogisticRegression
-from sklearn.feature_selection import RFE
-from skimage.color import rgb2gray
-from xgboost import XGBClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.pipeline import make_pipeline
+import pandas as pd
+from skimage.feature import hog
+from xgboost import XGBClassifier
+
 import matplotlib.pyplot as plt
+from skimage.feature import local_binary_pattern
+from skimage.color import rgb2gray
 import umap
 import os
 
@@ -34,59 +33,74 @@ class ModelXGBoost:
         self.pca = None
         self.scaler = None
 
-    def apply_lbp(self, images, **kwargs):
-        radius = kwargs.get("radius", 1)
-        n_points = kwargs.get("n_points", 8 * radius)
-        method = kwargs.get("method", "uniform")
-        return_histogram = kwargs.get("return_histogram", True)
+    def extract_hog_features(self, images) -> np.array:
+        hog_features = []
+        for idx, image in enumerate(images):
+            features = hog(
+                image,
+                orientations=12,
+                pixels_per_cell=(8, 8),
+                cells_per_block=(2, 2),
+                block_norm="L2-Hys",
+                visualize=False,
+                channel_axis=-1,
+            )
+            # plt.figure(figsize=(4, 2))
+            # plt.title("test")
+            # plt.imshow(hog_image, cmap="gray")
+            # plt.axis("off")
+            # plt.show()
+            hog_features.append(features)
+        return np.array(hog_features)
 
+    def apply_lbp(
+        self, images, radius=1, n_points=None, method="uniform", return_histogram=True
+    ) -> np.array:
+        """
+        Apply Local Binary Pattern (LBP) extraction on a list/array of images.
+
+        Parameters:
+          images (list or np.array): Array of images.
+          radius (int): Radius for LBP.
+          n_points (int): Number of points to consider around each pixel.
+                          If None, defaults to 8 * radius.
+          method (str): Method for LBP. For example, 'uniform'.
+          return_histogram (bool): If True, compute a normalized histogram from
+                                   the LBP image. Otherwise, return the raw image.
+
+        Returns:
+          np.array: An array of LBP features, where each feature is either
+                    the histogram or the raw LBP image.
+        """
         features_list = []
+        if n_points is None:
+            n_points = 8 * radius
 
-        for img in images:
-            # If the image is in color (3 channels), convert to grayscale.
-            if img.ndim == 3:
-                img_gray = rgb2gray(img)
+        for image in images:
+            # Convert to grayscale if image has multiple channels.
+            if image.ndim == 3:
+                image_gray = rgb2gray(image)
             else:
-                img_gray = img
+                image_gray = image
 
-            lbp_image = local_binary_pattern(img_gray, n_points, radius, method)
+            # Compute the LBP image.
+            lbp_image = local_binary_pattern(image_gray, n_points, radius, method)
 
             if return_histogram:
+                # For 'uniform', number of bins is n_points + 2; else, dynamic.
                 if method == "uniform":
                     n_bins = n_points + 2
                 else:
                     n_bins = int(lbp_image.max() + 1)
 
-                # Compute the histogram of LBP values and normalize the histogram.
+                # Compute and normalize the histogram.
                 hist, _ = np.histogram(
                     lbp_image.ravel(), bins=np.arange(0, n_bins + 1), density=True
                 )
                 features_list.append(hist)
             else:
                 features_list.append(lbp_image)
-
-        features_array = np.array(features_list)
-        return features_array
-
-    def extract_hog_features(self, images) -> np.array:
-        hog_features = []
-        # images = [resize(image, (64, 64), anti_aliasing=True) for image in images]
-
-        for idx, image in enumerate(images):
-            # Compute HOG features
-            features = hog(
-                image,
-                orientations=9,
-                pixels_per_cell=(8, 8),
-                cells_per_block=(2, 2),
-                block_norm="L2-Hys",
-                visualize=False,
-                transform_sqrt=True,
-                channel_axis=-1,
-            )
-            hog_features.append(features)
-
-        return np.array(hog_features)
+        return np.array(features_list)
 
     def apply_pca(self, features, n_components) -> np.array:
         if isinstance(n_components, float):
@@ -100,8 +114,6 @@ class ModelXGBoost:
 
         self.pca = PCA(n_components=n_components)
         self.pca.fit(features)
-        # dump(self.pca, self.pca_model_path)
-        self.logger.info(f"Saved new PCA model to {self.pca_model_path}")
         reduced_features = self.pca.transform(features)
         self.logger.info(f"Reduced feature shape: {reduced_features.shape}")
         return reduced_features
@@ -114,7 +126,6 @@ class ModelXGBoost:
         kernel = kwargs.get("kernel", "rbf")
         gamma = kwargs.get("gamma", None)
         n_samples = kwargs.get("n_samples", 10000)
-        n_jobs = kwargs.get("n_jobs", 1)
 
         # Build the Nystroem transformer for kernel approximation
         nystroem = Nystroem(
@@ -122,7 +133,7 @@ class ModelXGBoost:
             gamma=gamma,
             n_components=n_samples,
             random_state=42,
-            n_jobs=n_jobs,
+            n_jobs=1,
         )
         features_transformed = nystroem.fit_transform(features)
 
@@ -167,29 +178,8 @@ class ModelXGBoost:
         return transformed_features, kpca
 
     def train_and_eval(self, test_image_paths, *args, **kwargs):
-        # Start with the original images.
         features_train = self.x
         features_test = self.tx
-
-        if kwargs.get("lbp", False):
-            self.logger.info("Extracting LBP features from training images...")
-            # features_train = self.apply_lbp(features_train,return_histogram=False)
-            lbp_features_train = self.apply_lbp(
-                self.x, radius=1, n_points=10, method="uniform"
-            )
-            self.logger.info(
-                f"Shape of LBP features for training data: {features_train.shape}"
-            )
-
-            self.logger.info("Extracting LBP features from test images...")
-            # features_test = self.apply_lbp(features_test,return_histogram=False)
-            lbp_features_test = self.apply_lbp(
-                self.tx, radius=1, n_points=10, method="uniform"
-            )
-            self.logger.info(
-                f"Shape of LBP features for test data: {features_test.shape}"
-            )
-
         if kwargs.get("hog", False):
             self.logger.info("Extracting HOG features from training images...")
             features_train = self.extract_hog_features(features_train)
@@ -203,45 +193,43 @@ class ModelXGBoost:
             self.logger.info(
                 f"Shape of HOG features for test data: {features_test.shape}"
             )
+        if kwargs.get("lbp", False):
+            lbp_features_train = self.apply_lbp(
+                self.x, radius=1, method="uniform", return_histogram=True
+            )
+            lbp_features_test = self.apply_lbp(
+                self.tx, radius=1, method="uniform", return_histogram=True
+            )
+            self.logger.info(
+                f"Shape of LBP features for training data: {lbp_features_train.shape}"
+            )
+            self.logger.info(
+                f"Shape of LBP features for test data: {lbp_features_test.shape}"
+            )
 
         if kwargs.get("lbp", False) and kwargs.get("hog", False):
             features_train = np.concatenate(
-                [features_train, lbp_features_train], axis=1
+                (features_train, lbp_features_train), axis=1
             )
-            features_test = np.concatenate([features_test, lbp_features_test], axis=1)
+            features_test = np.concatenate((features_test, lbp_features_test), axis=1)
 
-        if kwargs.get("reshape", False):
-            features_train = features_train.reshape(self.x.shape[0], -1)
-            features_test = features_test.reshape(self.tx.shape[0], -1)
+            self.logger.info(
+                f"Combined features for training data: {features_train.shape}"
+            )
+            self.logger.info(f"Combined features for test data: {features_test.shape}")
 
-        # Standardize the features
-        self.scaler = RobustScaler()
+        self.scaler = StandardScaler()
         features_train = self.scaler.fit_transform(features_train)
         features_test = self.scaler.transform(features_test)
 
-        if kwargs.get("rfe", False):
-            self.logger.info("Applying Recursive Feature Elimination (RFE)...")
-
-            estimator = LogisticRegression(
-                max_iter=1000, solver="lbfgs", random_state=42
-            )
-            rfe = RFE(estimator=estimator, n_features_to_select=150, step=50)
-            features_train = rfe.fit_transform(features_train, self.y)
-            features_test = rfe.transform(features_test)
-            self.logger.info(
-                f"Shape of features after RFE: training: {features_train.shape}, test: {features_test.shape}"
-            )
-
-        # Linear PCA
         if kwargs.get("Linear_PCA", False):
-            features_train = self.apply_pca(features_train, n_components=150)
+            features_train = self.apply_pca(features_train, n_components=0.95)
             features_test = self.pca.transform(features_test)
 
-        # Kernel PCA
         if kwargs.get("Kernal_PCA", False):
             features_train, kpca = self.apply_kernel_pca(
                 features_train,
-                n_components=150,
+                n_components=100,
                 kernel="rbf",
                 gamma=1e-3,
                 alpha=1e-4,
@@ -250,12 +238,10 @@ class ModelXGBoost:
             )
             features_test = kpca.transform(features_test)
 
-        # Approximate Kernel PCA
         if kwargs.get("Approx_Kernal_PCA", False):
-            self.logger.info("applying kernal PCA (approximation)")
             features_train, kpca = self.apply_approx_kernel_pca(
                 features_train,
-                n_components=200,
+                n_components=50,
                 kernel="rbf",
                 gamma=1e-3,
                 n_samples=10000,
@@ -263,7 +249,6 @@ class ModelXGBoost:
             )
             features_test = kpca.transform(features_test)
 
-        # t-SNE for visualization
         if kwargs.get("TSNE", False):
             self.logger.info("Applying t-SNE to training data...")
             tsne = TSNE(n_components=2, perplexity=30, max_iter=300, random_state=42)
@@ -283,7 +268,6 @@ class ModelXGBoost:
             plt.colorbar(scatter, label="Labels")
             plt.show()
 
-        # Spectral Embedding for non-linear embedding
         if kwargs.get("Spectral_Embedding", False):
             self.logger.info("Applying Spectral Embedding to features...")
             combined_features = np.concatenate((features_train, features_test), axis=0)
@@ -293,14 +277,12 @@ class ModelXGBoost:
             features_train = combined_embedding[:n_train]
             features_test = combined_embedding[n_train:]
 
-        # UMAP for non-linear embedding
         if kwargs.get("UMAP", False):
             self.logger.info("Applying UMAP to features...")
             umap_reducer = umap.UMAP(n_components=3, random_state=42)
             features_train = umap_reducer.fit_transform(features_train)
             features_test = umap_reducer.transform(features_test)
 
-        # Classification using XGBoost
         clf_xgb = XGBClassifier(
             random_state=42, objective="multi:softmax", num_class=10
         )
@@ -309,7 +291,7 @@ class ModelXGBoost:
             "n_estimators": [200],
             "max_depth": [9],
             "eta": [0.2],
-            "subsample": [1],
+            "subsample": [1, 0.5, 0.8],
         }
 
         self.logger.info("Training the ensemble classifier with grid search...")
